@@ -1,0 +1,7 @@
+crewai>=0.30.0
+crewai-tools>=0.2.0
+langchain-anthropic
+litellm
+python-dotenv
+beautifulsoup4
+streamlit

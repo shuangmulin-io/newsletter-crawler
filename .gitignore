@@ -1,0 +1,31 @@
+# Python build and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
+env/
+
+# Streamlit configurations
+.streamlit/
+
+# Local Environment Secrets
+.env
+
+# Local Swarm Outputs, Cache, and logs
+output/
+.cache/
+*.log
+*.json
+*.md
+!README.md
+!walkthrough.md
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Exclude editor tools/logs directory
+editor/
