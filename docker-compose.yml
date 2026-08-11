@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  crawler:
+    build: .
+    container_name: newsletter-crawler
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always

@@ -39,18 +39,28 @@ for key in ["GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MODEL_NAME
 
 # Ensure output directory exists before config
 os.makedirs("output", exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('output/crawler_errors.log', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+from utils.security import SanitizingFormatter, sanitize_credentials, is_safe_url, sanitize_input, sanitize_url
+
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+formatter = SanitizingFormatter(log_format)
+
+file_handler = logging.FileHandler('output/crawler_errors.log', encoding='utf-8')
+file_handler.setFormatter(formatter)
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers = []
+root_logger.addHandler(file_handler)
+root_logger.addHandler(stream_handler)
+
 
 # Import our modular run utility from core.pipeline and helpers from utils.security
 from core.pipeline import run_crawler_pipeline
 from utils.security import is_safe_url, sanitize_input, sanitize_url
+from services.crawler_service import CrawlerService
 
 def inject_entity_badges(markdown_text: str) -> str:
     """
@@ -92,10 +102,9 @@ def sanitize_error_message(error_str: str, api_key: str = None) -> str:
     """
     if not error_str:
         return ""
+    error_str = sanitize_credentials(error_str)
     if api_key and len(api_key) > 5:
-        error_str = error_str.replace(api_key, "AI_STUDIO_API_KEY_MASKED")
-    # Also capture common Gemini API key patterns
-    error_str = re.sub(r'AIzaSy[A-Za-z0-9_\-]{33}', 'AI_STUDIO_API_KEY_MASKED', error_str)
+        error_str = error_str.replace(api_key, "API_KEY_MASKED")
     return error_str
 
 def render_swarm_flow(active_index: int) -> str:
@@ -439,11 +448,11 @@ for idx, target in enumerate(st.session_state.crawler_targets):
     st.sidebar.markdown(f"**Target #{idx+1}**")
     name_col, del_col = st.sidebar.columns([4, 1])
     with name_col:
-        t_name = st.sidebar.text_input(f"Name #{idx+1}", value=target["name"], key=f"target_name_{idx}", label_visibility="collapsed")
+        t_name = st.sidebar.text_input(f"Name #{idx+1}", value=target["name"], key=f"target_name_{idx}", max_chars=100, label_visibility="collapsed")
     with del_col:
         if st.sidebar.button("🗑️", key=f"target_del_{idx}"):
             to_delete = idx
-    t_url = st.sidebar.text_input(f"URL #{idx+1}", value=target["url"], key=f"target_url_{idx}", label_visibility="collapsed")
+    t_url = st.sidebar.text_input(f"URL #{idx+1}", value=target["url"], key=f"target_url_{idx}", max_chars=2000, label_visibility="collapsed")
     updated_targets.append({"name": sanitize_input(t_name), "url": sanitize_url(t_url)})
 
 if to_delete is not None:
@@ -464,29 +473,25 @@ st.sidebar.info(
 
 # Core Execution Controls
 date_str = datetime.now().strftime("%Y-%m-%d")
-output_file_path = f"output/daily_ai_news_{date_str}.md"
-json_file_path = f"output/daily_ai_news_{date_str}.json"
+from utils.cache import CacheManager
+cache_manager = CacheManager()
+output_file_path, json_file_path = cache_manager.get_cache_paths()
 cache_exists = os.path.exists(output_file_path)
 
-cache_valid = True
-if cache_exists and os.path.exists(json_file_path):
-    try:
-        with open(json_file_path, "r", encoding="utf-8") as f:
-            cached_json = json.load(f)
-        cached_newsletters = cached_json.get("newsletters", [])
-        cached_names = sorted([n.get("name") for n in cached_newsletters if n.get("name")])
-        current_names = sorted([t.get("name") for t in st.session_state.crawler_targets if t.get("name")])
-        if cached_names != current_names:
-            cache_valid = False
-    except Exception:
-        cache_valid = False
-else:
-    cache_valid = False
+cached_report = None
+if cache_exists:
+    cached_report = cache_manager.load_cached_report(
+        targets=st.session_state.crawler_targets,
+        model_name=selected_model,
+        base_url=base_url_input if custom_model else None
+    )
+
+cache_valid = cached_report is not None
 
 force_fresh = False
 if cache_exists:
     if not cache_valid:
-        st.warning("⚠️ **Targets Configuration Changed**: Today's cached digest does not match your current sidebar target newsletters list. Bypassing cache to run a fresh crawl.")
+        st.warning("⚠️ **Targets Configuration Changed**: Today's cached digest does not match your current sidebar target newsletters list or model configuration. Bypassing cache to run a fresh crawl.")
         cache_exists = False
     else:
         st.info("📂 **Cached Report Found**: Today's AI News Swarm Digest has already been generated. You can view the cached report below, or check 'Force Fresh Swarm Run' to bypass the cache and run a fresh crawl.")
@@ -508,6 +513,16 @@ for target in st.session_state.crawler_targets:
         invalid_url_msg = "Target newsletter Name and URL fields cannot be empty."
         break
         
+    if len(name_strip) > 100:
+        invalid_url_detected = True
+        invalid_url_msg = f"Name for '{name_strip}' is too long (maximum 100 characters)."
+        break
+
+    if len(url_strip) > 2000:
+        invalid_url_detected = True
+        invalid_url_msg = f"URL for '{name_strip}' is too long (maximum 2000 characters)."
+        break
+
     if not url_strip.lower().startswith(("http://", "https://")):
         invalid_url_detected = True
         invalid_url_msg = f"Invalid URL scheme for '{name_strip}'. URLs must begin with http:// or https://."
@@ -993,14 +1008,20 @@ if launch_btn:
             ]
             
             try:
-                # Run the pipeline with resolved values and callbacks
-                report_output = run_crawler_pipeline(
+                # Instantiate CrawlerService
+                service = CrawlerService(
                     model_name=selected_model,
                     api_key=api_key_input,
-                    base_url=base_url_input,
-                    callbacks=task_callbacks,
-                    targets=st.session_state.crawler_targets
+                    base_url=base_url_input if custom_model else None
                 )
+                
+                # Execute the service
+                report_dict, markdown_content = service.run(
+                    targets=st.session_state.crawler_targets,
+                    callbacks=task_callbacks,
+                    force_fresh=force_fresh
+                )
+                
                 # Save logs to file
                 os.makedirs("output", exist_ok=True)
                 with open("output/swarm_console.log", "w", encoding="utf-8") as f:

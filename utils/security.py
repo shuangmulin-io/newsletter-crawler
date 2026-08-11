@@ -6,6 +6,8 @@ import urllib.request
 import html
 from urllib.parse import urlparse
 
+import ipaddress
+
 def is_safe_url(url: str) -> bool:
     """
     Validates a URL to prevent SSRF by checking:
@@ -25,25 +27,16 @@ def is_safe_url(url: str) -> bool:
         ips = socket.getaddrinfo(hostname, None)
         for ip_info in ips:
             ip = ip_info[4][0]
-            # Check loopback
-            if ip.startswith('127.'):
-                return False
-            # Check link-local / cloud metadata endpoints
-            if ip.startswith('169.254.'):
-                return False
-            # Check private subnets
-            if ip.startswith('10.'):
-                return False
-            if ip.startswith('172.'):
-                parts = ip.split('.')
-                if len(parts) >= 2 and 16 <= int(parts[1]) <= 31:
+            try:
+                ip_obj = ipaddress.ip_address(ip)
+                if (ip_obj.is_private or 
+                    ip_obj.is_loopback or 
+                    ip_obj.is_link_local or 
+                    ip_obj.is_reserved or 
+                    ip_obj.is_multicast or 
+                    ip_obj.is_unspecified):
                     return False
-            if ip.startswith('192.168.'):
-                return False
-            if ip == '0.0.0.0' or ip == '255.255.255.255':
-                return False
-            # IPv6 checks
-            if ip == '::1' or ip.startswith('fe80:') or ip.startswith('fc00:') or ip.startswith('fd00:'):
+            except ValueError:
                 return False
         return True
     except Exception:
@@ -144,3 +137,32 @@ def sanitize_url(url: str) -> str:
     if clean_url.lower().startswith("javascript:"):
         return ""
     return clean_url
+
+CREDENTIAL_PATTERNS = [
+    (r'AIzaSy[A-Za-z0-9_\-]{33,}', 'GEMINI_API_KEY_MASKED'),
+    (r'sk-[A-Za-z0-9_\-]{30,}', 'API_KEY_MASKED'),
+    (r'Bearer\s+[A-Za-z0-9_\-\.\+\/=]{30,}', 'BEARER_TOKEN_MASKED'),
+    (r'password=[\'"]?[^\s\'"]+', 'PASSWORD_MASKED'),
+]
+
+def sanitize_credentials(text: str) -> str:
+    """
+    Scrubs credentials and API keys from log messages or stack traces.
+    """
+    if not text:
+        return ""
+    result = text
+    for pattern, replacement in CREDENTIAL_PATTERNS:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    return result
+
+import logging
+
+class SanitizingFormatter(logging.Formatter):
+    """
+    Logging formatter that sanitizes credentials from logs.
+    """
+    def format(self, record):
+        formatted = super().format(record)
+        return sanitize_credentials(formatted)
+
