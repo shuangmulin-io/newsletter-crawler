@@ -15,7 +15,7 @@ def run_crawler_pipeline(
     Utility wrapper to instantly run the assembled crawler crew.
 
     Args:
-        model_name: Optional model provider and ID (e.g. 'gemini/gemini-2.5-flash').
+        model_name: Optional model provider and ID (e.g. 'gemini/gemini-flash-lite-latest').
         api_key: Optional API key. Fallbacks to environment variables if not provided.
         base_url: Optional custom base gateway URL.
         callbacks: Optional list of UI callback update hooks.
@@ -99,7 +99,7 @@ def run_crawler_pipeline(
 
         # Generate Swarm Audit Log
         total_duration = time.time() - start_time
-        resolved_model = model_name or os.getenv("MODEL_NAME", "gemini/gemini-3.6-flash")
+        resolved_model = model_name or os.getenv("MODEL_NAME", "gemini/gemini-flash-lite-latest")
 
         # Extract token metrics if present
         token_metrics = {}

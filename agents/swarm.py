@@ -28,7 +28,7 @@ def create_crawler_crew(
     Assembles and configures the 6-agent crawling crew with dynamic LLM configuration.
 
     Args:
-        model_name: The target model provider and ID (e.g. 'gemini/gemini-2.5-flash').
+        model_name: The target model provider and ID (e.g. 'gemini/gemini-flash-lite-latest').
         api_key: The authenticated API key for requests.
         base_url: Optional custom base gateway URL.
         callbacks: Optional list of UI callback update hooks for execution milestones.
@@ -42,7 +42,7 @@ def create_crawler_crew(
         web_tools.set_dynamic_targets(targets)
         
     # Use environment variables as default fallbacks
-    resolved_model = model_name or os.getenv("MODEL_NAME", "gemini/gemini-3.6-flash")
+    resolved_model = model_name or os.getenv("MODEL_NAME", "gemini/gemini-flash-lite-latest")
     
     # Resolve API Key
     resolved_key = api_key

@@ -384,7 +384,7 @@ provider = st.sidebar.selectbox(
 
 # Dynamically change models and keys based on provider
 if provider == "Official Google Gemini":
-    model_options = ["gemini/gemini-3.6-flash", "gemini/gemini-3.5-flash-lite", "gemini/gemini-3.5-flash"]
+    model_options = ["gemini/gemini-flash-lite-latest", "gemini/gemini-2.5-flash", "gemini/gemini-2.0-flash"]
     default_key = os.getenv("GEMINI_API_KEY", "")
     default_url = ""
     key_label = "Gemini API Key"
@@ -412,7 +412,9 @@ if custom_model:
         help="Specify the target model ID (e.g., openai/gpt-4o, openrouter/meta-llama/llama-3.1-405b)"
     )
 else:
-    selected_model = st.sidebar.selectbox("Choose Model", options=model_options, index=0)
+    env_model = os.getenv("MODEL_NAME", "gemini/gemini-flash-lite-latest")
+    default_idx = model_options.index(env_model) if env_model in model_options else 0
+    selected_model = st.sidebar.selectbox("Choose Model", options=model_options, index=default_idx)
 
 api_key_input = st.sidebar.text_input(
     key_label,
